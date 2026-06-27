@@ -11,37 +11,43 @@ import * as KeyboardShortcuts from '../keyboard-shortcuts';
 import traceGenerator from '../../../demo/trace-generators';
 import transformTraceData from '../../../model/transform-trace-data';
 
-const { mockLayoutPrefsStore, mockTraceTimelineStore, mockUseTraceTimelineStore } = vi.hoisted(() => {
-  const mockTraceTimelineStore = {
-    detailStates: new Map(),
-    prunedServices: new Set(),
-    setPrunedServices: vi.fn(),
-    collapseAll: vi.fn(),
-    collapseOne: vi.fn(),
-    expandAll: vi.fn(),
-    expandOne: vi.fn(),
-  };
-  const mockUseTraceTimelineStore = Object.assign(
-    vi.fn(selector => selector(mockTraceTimelineStore)),
-    {
-      getState: () => mockTraceTimelineStore,
-      setState: vi.fn(partial => Object.assign(mockTraceTimelineStore, partial)),
-    }
-  );
-  return {
-    mockLayoutPrefsStore: {
-      spanNameColumnWidth: 0.25,
-      sidePanelWidth: 0.375,
-      detailPanelMode: 'inline',
-      timelineBarsVisible: true,
-      setSpanNameColumnWidth: vi.fn(),
-      setSidePanelWidth: vi.fn(),
-      setTimelineBarsVisible: vi.fn(),
-    },
-    mockTraceTimelineStore,
-    mockUseTraceTimelineStore,
-  };
-});
+const { mockLayoutPrefsStore, mockTraceTimelineStore, mockUseTraceTimelineStore, mockUseConfig } = vi.hoisted(
+  () => {
+    const mockTraceTimelineStore = {
+      detailStates: new Map(),
+      prunedServices: new Set(),
+      setPrunedServices: vi.fn(),
+      collapseAll: vi.fn(),
+      collapseOne: vi.fn(),
+      expandAll: vi.fn(),
+      expandOne: vi.fn(),
+    };
+    const mockUseTraceTimelineStore = Object.assign(
+      vi.fn(selector => selector(mockTraceTimelineStore)),
+      {
+        getState: () => mockTraceTimelineStore,
+        setState: vi.fn(partial => Object.assign(mockTraceTimelineStore, partial)),
+      }
+    );
+    const mockUseConfig = vi.fn(() => ({ traceTimeline: { summaryFieldsEnabled: true } }));
+    return {
+      mockLayoutPrefsStore: {
+        spanNameColumnWidth: 0.25,
+        sidePanelWidth: 0.375,
+        detailPanelMode: 'inline',
+        timelineBarsVisible: true,
+        selectedSummaryFields: [],
+        setSpanNameColumnWidth: vi.fn(),
+        setSidePanelWidth: vi.fn(),
+        setTimelineBarsVisible: vi.fn(),
+        setSelectedSummaryFields: vi.fn(),
+      },
+      mockTraceTimelineStore,
+      mockUseTraceTimelineStore,
+      mockUseConfig,
+    };
+  }
+);
 
 vi.mock('./store', () => ({
   useLayoutPrefsStore: vi.fn(selector => selector(mockLayoutPrefsStore)),
@@ -61,6 +67,15 @@ const mockUseServiceFilter = vi.hoisted(() => ({
 }));
 vi.mock('./useServiceFilter', () => ({
   useServiceFilter: vi.fn(() => mockUseServiceFilter),
+}));
+vi.mock('../../../hooks/useConfig', () => ({
+  useConfig: mockUseConfig,
+}));
+const mockBuildAvailableFields = vi.hoisted(() => vi.fn(() => []));
+const mockBuildSummaryLookup = vi.hoisted(() => vi.fn(() => new Map()));
+vi.mock('./summaryFieldsUtils', () => ({
+  buildAvailableFields: mockBuildAvailableFields,
+  buildSummaryLookup: mockBuildSummaryLookup,
 }));
 vi.mock('./VirtualizedTraceView', () => mockDefault(() => <div data-testid="virtualized-trace-view-mock" />));
 vi.mock('./SpanDetailSidePanel', () => mockDefault(() => <div data-testid="span-detail-side-panel-mock" />));
@@ -132,6 +147,10 @@ describe('<TraceTimelineViewer>', () => {
     props.setSidePanelWidth.mockClear();
     mockLayoutPrefsStore.setSpanNameColumnWidth.mockClear();
     mockLayoutPrefsStore.setSidePanelWidth.mockClear();
+    mockLayoutPrefsStore.setSelectedSummaryFields.mockClear();
+    mockBuildAvailableFields.mockClear();
+    mockBuildSummaryLookup.mockClear();
+    mockUseConfig.mockReturnValue({ traceTimeline: { summaryFieldsEnabled: true } });
     mockTraceTimelineStore.collapseAll.mockClear();
     mockTraceTimelineStore.collapseOne.mockClear();
     mockTraceTimelineStore.expandAll.mockClear();
@@ -158,6 +177,36 @@ describe('<TraceTimelineViewer>', () => {
     const initialCount = screen.getAllByTestId('virtualized-trace-view-mock').length;
     renderWithRedux(<TraceTimelineViewer {...props} />);
     expect(screen.getAllByTestId('virtualized-trace-view-mock')).toHaveLength(initialCount + 1);
+  });
+
+  it('does not auto-persist summary fields filtered by trace availability', () => {
+    mockLayoutPrefsStore.selectedSummaryFields = ['customer.id'];
+    const traceWithoutCustomerId = transformTraceData({
+      traceID: 'no-customer',
+      processes: { p1: { serviceName: 'svc', tags: [] } },
+      spans: [
+        {
+          spanID: 's1',
+          traceID: 'no-customer',
+          operationName: 'op',
+          duration: 1,
+          startTime: 1,
+          processID: 'p1',
+          references: [],
+          tags: [{ key: 'region', value: 'us-east-1' }],
+        },
+      ],
+    }).asOtelTrace();
+    render(<TraceTimelineViewerImpl {...props} trace={traceWithoutCustomerId} />);
+    expect(mockLayoutPrefsStore.setSelectedSummaryFields).not.toHaveBeenCalled();
+  });
+
+  it('skips summary field computation when summaryFieldsEnabled is false', () => {
+    mockUseConfig.mockReturnValue({ traceTimeline: { summaryFieldsEnabled: false } });
+    mockLayoutPrefsStore.selectedSummaryFields = ['customer.id'];
+    render(<TraceTimelineViewerImpl {...props} />);
+    expect(mockBuildAvailableFields).not.toHaveBeenCalled();
+    expect(mockBuildSummaryLookup).not.toHaveBeenCalled();
   });
 
   it('derives selectedSpanID from Zustand detailStates', () => {

@@ -238,6 +238,11 @@ export type Config = {
     // 'sidepanel' makes the side panel the default experience for new users.
     // Default: 'inline'.
     defaultDetailPanelMode?: SpanDetailPanelMode;
+
+    // summaryFieldsEnabled controls the summary fields feature in the trace timeline.
+    // When false, the settings UI is hidden and summary field computation is skipped.
+    // Default: true.
+    summaryFieldsEnabled?: boolean;
   };
 
   // useOpenTelemetryTerms determines whether the UI uses legacy Jaeger terminology

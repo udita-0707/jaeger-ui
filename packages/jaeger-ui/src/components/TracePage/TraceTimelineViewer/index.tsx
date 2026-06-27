@@ -1,7 +1,7 @@
 // Copyright (c) 2017 Uber Technologies, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { connect } from 'react-redux';
 import { bindActionCreators, Dispatch } from 'redux';
 
@@ -18,6 +18,7 @@ import {
 } from './store';
 import SpanDetailSidePanel from './SpanDetailSidePanel';
 import TimelineHeaderRow from './TimelineHeaderRow';
+import { buildAvailableFields, buildSummaryLookup } from './summaryFieldsUtils';
 import { useServiceFilter } from './useServiceFilter';
 import VirtualizedTraceView from './VirtualizedTraceView';
 import VerticalResizer from '../../common/VerticalResizer';
@@ -27,6 +28,7 @@ import { TUpdateViewRangeTimeFunction, IViewRange, ViewRangeTimeUpdate } from '.
 import { TNil, ReduxState } from '../../../types';
 import { IOtelSpan, IOtelTrace } from '../../../types/otel';
 import { CriticalPathSection } from '../../../types/critical_path';
+import { useConfig } from '../../../hooks/useConfig';
 
 import './index.css';
 
@@ -142,6 +144,18 @@ export const TraceTimelineViewerImpl = (props: TProps) => {
 
   const { serviceFilterNode } = useServiceFilter(trace, detailPanelMode);
 
+  const summaryFieldsEnabled = useConfig().traceTimeline?.summaryFieldsEnabled !== false;
+  const selectedFields = useLayoutPrefsStore(s => s.selectedSummaryFields);
+  const { effectiveSelectedFields, summaryLookup } = useMemo(() => {
+    if (!summaryFieldsEnabled || selectedFields.length === 0) {
+      return { effectiveSelectedFields: [], summaryLookup: new Map() };
+    }
+    const availableFieldKeys = new Set(buildAvailableFields(trace).map(field => field.key));
+    const effectiveSelectedFields = selectedFields.filter(key => availableFieldKeys.has(key));
+    const summaryLookup = buildSummaryLookup(trace, effectiveSelectedFields);
+    return { effectiveSelectedFields, summaryLookup };
+  }, [summaryFieldsEnabled, selectedFields, trace]);
+
   // When timeline bars are hidden with the side panel active, the side panel expands to absorb
   // the timeline column so the Service/Operation column keeps its pixel width unchanged.
   const effectiveSidePanelWidth =
@@ -177,7 +191,7 @@ export const TraceTimelineViewerImpl = (props: TProps) => {
   // document flow. layoutRef is on the --sidePanelLayout div which starts at the same document
   // position as the header row. We compute panelTop once:
   //   top + scrollY = document-relative top of the layout area = the fixed viewport top of the header
-  //   + 38          = the fixed header height, so the panel starts just below the header
+  //   + --timeline-header-row-height = the fixed header height, so the panel starts just below the header
   // Because the header is fixed, panelTop is constant — only a resize listener is needed.
   const layoutRef = useRef<HTMLDivElement>(null);
   const [panelTop, setPanelTop] = useState<number | null>(null);
@@ -239,6 +253,8 @@ export const TraceTimelineViewerImpl = (props: TProps) => {
       useOtelTerms={useOtelTerms}
       currentViewRangeTime={viewRange.time.current}
       nameColumnWidth={nameColumnWidth}
+      selectedFields={effectiveSelectedFields}
+      summaryLookup={summaryLookup}
     />
   );
 

@@ -38,6 +38,23 @@ vi.mock('./TracePageSearchBar', () => {
   });
 });
 
+vi.mock('../TraceTimelineViewer/store', () => ({
+  useLayoutPrefsStore: vi.fn(selector =>
+    selector({
+      selectedSummaryFields: [],
+      setSelectedSummaryFields: vi.fn(),
+    })
+  ),
+}));
+
+vi.mock('../TraceTimelineViewer/summaryFieldsUtils', () => ({
+  buildAvailableFields: vi.fn(() => []),
+}));
+
+vi.mock('../../../hooks/useConfig', () => ({
+  useConfig: vi.fn(() => ({ traceTimeline: { summaryFieldsEnabled: true } })),
+}));
+
 vi.mock('../../common/LabeledList', () => {
   return mockDefault(function MockLabeledList(props) {
     return (
